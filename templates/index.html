@@ -3,23 +3,83 @@
 <head>
   <title>Fruit & Voice Q&A Assistant</title>
   <style>
-    body { font-family: Arial; background: #f4f7fa; padding: 30px; }
-    .container { display: flex; flex-wrap: wrap; gap: 30px; }
+
+  body {
+    font-family: Arial, sans-serif;
+    background: #f4f7fa;
+    padding: 30px;
+    margin: 0;
+  }
+
+  .container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 30px;
+    justify-content: center;
+  }
+
+  .card {
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    flex: 1 1 350px;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  input,
+  button,
+  textarea {
+    width: 100%;
+    padding: 10px;
+    margin-top: 10px;
+    font-size: 16px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    box-sizing: border-box;
+  }
+
+  button {
+    background: #007bff;
+    color: white;
+    cursor: pointer;
+    transition: background 0.3s ease;
+  }
+
+  button:hover {
+    background: #0056b3;
+  }
+
+  img {
+    max-width: 100%;
+    margin-top: 10px;
+    border-radius: 8px;
+  }
+
+  #uploadResult,
+  #predictResult,
+  #qaResult {
+    margin-top: 20px;
+  }
+
+  /* === Responsive for small screens === */
+  @media (max-width: 768px) {
+    .container {
+      flex-direction: column;
+      gap: 20px;
+    }
+
     .card {
-      background: white;
-      padding: 20px;
-      border-radius: 10px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-      flex: 1 1 350px;
+      flex: 1 1 100%;
     }
-    input, button, textarea {
-      width: 100%; padding: 10px; margin-top: 10px;
-      font-size: 16px; border-radius: 6px; border: 1px solid #ccc;
+
+    body {
+      padding: 15px;
     }
-    button { background: #007bff; color: white; cursor: pointer; }
-    img { max-width: 100%; margin-top: 10px; border-radius: 8px; }
-    #uploadResult, #predictResult, #qaResult { margin-top: 20px; }
-  </style>
+  }
+</style>
+
 </head>
 <body>
 
