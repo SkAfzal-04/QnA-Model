@@ -67,6 +67,7 @@ def predict():
 def ask():
     question = request.json.get("question", "").strip().lower()
 
+    # First: Try local QA collection
     answer = load_and_predict_answer(question, qa_collection, return_multiple=True)
 
     if answer:
@@ -76,10 +77,24 @@ def ask():
             "can_reteach": True
         })
 
+    # Not found? Search Wikipedia automatically
+    wiki_answer = search_wikipedia(question)
+
+    if wiki_answer:
+        # Optional: Save it to local QA collection
+        save_to_qa_collection(question, wiki_answer)
+
+        return jsonify({
+            "answer": wiki_answer,
+            "source": "wiki",
+            "can_reteach": True
+        })
+
+    # Still nothing found
     return jsonify({
         "answer": None,
-        "needs_search": True,
-        "message": "I couldn't find an answer. Say 'search' or teach me."
+        "needs_search": False,
+        "message": "Sorry, I couldn't find the answer."
     })
 
 @app.route("/regenerate-answer", methods=["POST"])
