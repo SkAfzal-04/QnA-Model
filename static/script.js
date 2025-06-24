@@ -100,7 +100,7 @@ async function startAsking() {
                 return;
               }
 
-              if (input.includes("search")) {
+              if (input.includes("search the answer")) {
                 const searchRes = await fetch('/search-and-learn', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
