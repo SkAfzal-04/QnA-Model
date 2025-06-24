@@ -50,19 +50,17 @@ async function startAsking() {
 
       const data = await res.json();
 
-      // ✅ Answer found
       if (data.answer) {
         document.getElementById('qaResult').innerText = `Answer: ${data.answer} (source: ${data.source})`;
 
         speak(`${data.answer}`, () => {
-          // Add delay to ensure speak finishes before listen
           setTimeout(() => {
             speak("Do you want a different explanation? Say yes or no.", () => {
               setTimeout(() => {
                 listenVoice(async (reply) => {
                   const response = reply.toLowerCase();
 
-                  if (response.includes("yes i need")) {
+                  if (response.includes("yes")) {
                     const regenRes = await fetch('/regenerate-answer', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
@@ -80,16 +78,16 @@ async function startAsking() {
                   } else {
                     speak("Okay.");
                   }
-                });
-              }, 500); // Delay before listening
+                }, 8000); // ← longer listening time (8s)
+              }, 1000);
             });
-          }, 500); // Delay after first speak
+          }, 1000);
         });
       }
 
-      // ❌ No answer found
+      // No answer found
       else if (data.needs_search) {
-        speak("I don't know the answer. Say 'search' to find online, 'stop' to cancel, or tell me the answer directly.", () => {
+        speak("I don't know the answer. Say 'search the answer' to find online, 'stop' to cancel, or tell me the answer directly.", () => {
           setTimeout(() => {
             listenVoice(async (response) => {
               const input = response.toLowerCase();
@@ -123,14 +121,13 @@ async function startAsking() {
                 document.getElementById('qaResult').innerText = `Learned: "${pendingQuestion}" → "${response}"`;
                 pendingQuestion = null;
               }
-            });
-          }, 600); // Delay before listening
+            }, 10000); // ← increased listening duration (10s)
+          }, 1000);
         });
       }
-    });
+    }, 8000); // ← Initial question listening duration (8s)
   });
 }
-
 
 
 
