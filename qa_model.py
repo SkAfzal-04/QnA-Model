@@ -1,8 +1,17 @@
-from sentence_transformers import SentenceTransformer, util
+import os
 import joblib
 import random
+from sentence_transformers import SentenceTransformer, util
 
-# Load model once
+# === Cache Setup ===
+CACHE_DIR = "/app/cache"
+os.makedirs(CACHE_DIR, exist_ok=True)
+
+os.environ["HF_HOME"] = CACHE_DIR
+os.environ["TRANSFORMERS_CACHE"] = CACHE_DIR
+os.environ["TORCH_HOME"] = CACHE_DIR
+
+# === Model Init ===
 model = SentenceTransformer("all-MiniLM-L6-v2")
 model_path = "qa_model_embeddings.pkl"
 
@@ -21,7 +30,6 @@ def train_qa_model(collection):
     # Save everything
     joblib.dump((embeddings, questions, answers), model_path)
     print("✅ Semantic Q&A model trained and saved.")
-
 
 def load_and_predict_answer(query, collection, similarity_threshold=0.45, return_multiple=False, exclude_answer=None):
     try:
@@ -43,9 +51,8 @@ def load_and_predict_answer(query, collection, similarity_threshold=0.45, return
                 candidate = answers[i]
                 if candidate != exclude_answer:
                     return candidate
-            return answers[top_indices[0]]  # Fallback to the best match if all match previous
+            return answers[top_indices[0]]  # fallback to best match
         return None
     except Exception as e:
-        print(f"❌ Error predicting alternate answer: {e}")
+        print(f"❌ Error predicting answer: {e}")
         return None
-
