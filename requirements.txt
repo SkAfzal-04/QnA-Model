@@ -1,0 +1,13 @@
+flask
+flask-cors
+pymongo
+cloudinary
+scikit-learn
+pandas
+python-dotenv
+requests 
+beautifulsoup4
+wikipedia
+sentence-transformers 
+torch
+

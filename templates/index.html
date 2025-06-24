@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Fruit & Voice Q&A Assistant</title>
+  <style>
+    body { font-family: Arial; background: #f4f7fa; padding: 30px; }
+    .container { display: flex; flex-wrap: wrap; gap: 30px; }
+    .card {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+      flex: 1 1 350px;
+    }
+    input, button, textarea {
+      width: 100%; padding: 10px; margin-top: 10px;
+      font-size: 16px; border-radius: 6px; border: 1px solid #ccc;
+    }
+    button { background: #007bff; color: white; cursor: pointer; }
+    img { max-width: 100%; margin-top: 10px; border-radius: 8px; }
+    #uploadResult, #predictResult, #qaResult { margin-top: 20px; }
+  </style>
+</head>
+<body>
+
+  <h1>🍓 Fruit Classifier & Voice Q&A Assistant</h1>
+
+  <div class="container">
+
+    <!-- Upload Fruit -->
+    <div class="card">
+      <h3>Upload & Train Fruit</h3>
+      <form id="uploadForm">
+        <input type="text" name="name" placeholder="Fruit name" required />
+        <input type="file" name="image" accept="image/*" required />
+        <button type="submit">Upload & Train</button>
+      </form>
+      <div id="uploadResult"></div>
+    </div>
+
+    <!-- Predict via Voice -->
+    <div class="card">
+      <h3>🎤 Predict Fruit (Voice Only)</h3>
+      <button onclick="startVoicePrediction()">Start Voice Prediction</button>
+      <div id="predictResult"></div>
+    </div>
+
+    <!-- Ask & Teach -->
+    <div class="card">
+      <h3>🎙️ Ask / 📚 Teach</h3>
+      <button onclick="startAsking()">Ask a Question</button>
+      <button onclick="startTeaching()">Teach Me</button>
+      <div id="qaResult"></div>
+    </div>
+
+  </div>
+
+<script src="{{ url_for('static', filename='script.js') }}"></script>
+
+</body>
+</html>
