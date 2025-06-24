@@ -1,42 +1,42 @@
+let pendingQuestion = null;
 
-    let pendingQuestion = null;
+// Upload Fruit
+const uploadForm = document.getElementById('uploadForm');
+uploadForm.onsubmit = async (e) => {
+  e.preventDefault();
+  const formData = new FormData(uploadForm);
+  const res = await fetch('/add-fruit', { method: 'POST', body: formData });
+  const data = await res.json();
+  document.getElementById('uploadResult').innerHTML = data.error
+    ? `<p style="color:red">${data.error}</p>`
+    : `<p style="color:green">${data.message}</p><img src="${data.image_url}" />`;
+};
 
-    // Upload Fruit
-    const uploadForm = document.getElementById('uploadForm');
-    uploadForm.onsubmit = async (e) => {
-      e.preventDefault();
-      const formData = new FormData(uploadForm);
-      const res = await fetch('/add-fruit', { method: 'POST', body: formData });
-      const data = await res.json();
-      document.getElementById('uploadResult').innerHTML = data.error
-        ? `<p style="color:red">${data.error}</p>`
-        : `<p style="color:green">${data.message}</p><img src="${data.image_url}" />`;
-    };
-
-    // Predict Fruit via Voice
-    async function startVoicePrediction() {
-      speak("Please say the fruit name.", () => {
-        listenVoice(async (spokenText) => {
-          const res = await fetch('/predict', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: spokenText })
-          });
-          const data = await res.json();
-          if (data.error) {
-            speak("Sorry, I could not recognize the fruit.");
-            document.getElementById('predictResult').innerHTML = `<p style="color:red">${data.error}</p>`;
-          } else {
-            speak(`It looks like ${data.prediction}`);
-            document.getElementById('predictResult').innerHTML = `
-              <p style="color:blue">Prediction: ${data.prediction}</p>
-              <img src="${data.image_url}" />
-            `;
-          }
-        });
+// Predict Fruit via Voice
+async function startVoicePrediction() {
+  speak("Please say the fruit name.", () => {
+    listenVoice(async (spokenText) => {
+      const res = await fetch('/predict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: spokenText })
       });
-    }
+      const data = await res.json();
+      if (data.error) {
+        speak("Sorry, I could not recognize the fruit.");
+        document.getElementById('predictResult').innerHTML = `<p style="color:red">${data.error}</p>`;
+      } else {
+        speak(`It looks like ${data.prediction}`);
+        document.getElementById('predictResult').innerHTML = `
+          <p style="color:blue">Prediction: ${data.prediction}</p>
+          <img src="${data.image_url}" />
+        `;
+      }
+    });
+  });
+}
 
+// Ask via Voice
 async function startAsking() {
   speak("Please ask your question.", () => {
     listenVoice(async (question) => {
@@ -78,16 +78,15 @@ async function startAsking() {
                   } else {
                     speak("Okay.");
                   }
-                }, 8000); // ← longer listening time (8s)
+                }, 8000);
               }, 1000);
             });
           }, 1000);
         });
       }
 
-      // No answer found
-      else if (data.needs_search) {
-        speak("I don't know the answer. Say 'search the answer' to find online, 'stop' to cancel, or tell me the answer directly.", () => {
+      else {
+        speak("I don't know the answer. You can tell me or say stop.", () => {
           setTimeout(() => {
             listenVoice(async (response) => {
               const input = response.toLowerCase();
@@ -98,104 +97,147 @@ async function startAsking() {
                 return;
               }
 
-              if (input.includes("search the answer")) {
-                const searchRes = await fetch('/search-and-learn', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ question: pendingQuestion })
-                });
-
-                const result = await searchRes.json();
-
-                if (result.answer) {
-                  speak(`I found this answer: ${result.answer}`);
-                  document.getElementById('qaResult').innerText = `Answer: ${result.answer} (from wiki)`;
-                } else {
-                  speak("Sorry, I couldn't find anything useful online.");
-                }
-
-                pendingQuestion = null;
-              } else {
-                await saveAnswer(pendingQuestion, response);
-                speak("Thanks! I have learned the new answer.");
-                document.getElementById('qaResult').innerText = `Learned: "${pendingQuestion}" → "${response}"`;
-                pendingQuestion = null;
-              }
-            }, 10000); // ← increased listening duration (10s)
+              await saveAnswer(pendingQuestion, response);
+              speak("Thanks! I have learned the new answer.");
+              document.getElementById('qaResult').innerText = `Learned: "${pendingQuestion}" → "${response}"`;
+              pendingQuestion = null;
+            }, 10000);
           }, 1000);
         });
       }
-    }, 8000); // ← Initial question listening duration (8s)
+    }, 8000);
   });
 }
 
-
-
-
-
-
-    // Teach Answer
-    async function startTeaching() {
-      if (!pendingQuestion) {
-        speak("Say the question you want to teach.", () => {
-          listenVoice((question) => {
-            pendingQuestion = question;
-            speak("Now say the answer.", () => {
-              listenVoice((answer) => saveAnswer(pendingQuestion, answer));
-            });
-          });
-        });
-      } else {
-        speak("Say the answer for your earlier question.", () => {
+// Teach Answer
+async function startTeaching() {
+  if (!pendingQuestion) {
+    speak("Say the question you want to teach.", () => {
+      listenVoice((question) => {
+        pendingQuestion = question;
+        speak("Now say the answer.", () => {
           listenVoice((answer) => saveAnswer(pendingQuestion, answer));
         });
-      }
-    }
-
-    async function saveAnswer(question, answer) {
-      const res = await fetch('/teach', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, answer })
       });
-      const data = await res.json();
-      speak("Answer saved successfully.");
-      document.getElementById('qaResult').innerText = data.message || "Learned.";
-      pendingQuestion = null;
-    }
+    });
+  } else {
+    speak("Say the answer for your earlier question.", () => {
+      listenVoice((answer) => saveAnswer(pendingQuestion, answer));
+    });
+  }
+}
 
-    // Speak
-    function speak(text, callback) {
-      const msg = new SpeechSynthesisUtterance(text);
-      msg.lang = 'en-US';
-      speechSynthesis.speak(msg);
-      msg.onend = () => {
-        if (callback) callback();
-      };
-    }
+async function saveAnswer(question, answer) {
+  const res = await fetch('/teach', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question, answer })
+  });
+  const data = await res.json();
+  speak("Answer saved successfully.");
+  document.getElementById('qaResult').innerText = data.message || "Learned.";
+  pendingQuestion = null;
+}
 
-    // Listen
-    function listenVoice(callback) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRecognition) {
-        alert("Your browser does not support speech recognition.");
-        return;
+// Speak
+function speak(text, callback) {
+  const msg = new SpeechSynthesisUtterance(text);
+  msg.lang = 'en-US';
+  speechSynthesis.speak(msg);
+  msg.onend = () => {
+    if (callback) callback();
+  };
+}
+
+// Listen
+function listenVoice(callback, duration = 8000) {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    alert("Your browser does not support speech recognition.");
+    return;
+  }
+
+  const recognition = new SpeechRecognition();
+  recognition.lang = 'en-US';
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+
+  let responded = false;
+
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript.trim();
+    responded = true;
+    callback(transcript);
+  };
+
+  recognition.onerror = (event) => {
+    console.error("Voice error:", event.error);
+    speak("Sorry, I didn't catch that. Please try again.");
+  };
+
+  recognition.start();
+
+  setTimeout(() => {
+    if (!responded) recognition.stop();
+  }, duration);
+}
+
+//
+// 🧠 Chat Interface
+//
+
+function sendMessage() {
+  const input = document.getElementById("chatInput");
+  const message = input.value.trim();
+  if (!message) return;
+
+  addChatMessage("You", message);
+  input.value = "";
+  pendingQuestion = message;
+
+  fetch("/ask", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question: message })
+  })
+    .then(res => res.json())
+    .then(async data => {
+      if (data.answer) {
+        addChatMessage("Assistant", `${data.answer} (${data.source})`);
+      } else {
+        addChatMessage("Assistant", "I don't know. Please teach me.");
+        const userAnswer = await promptAnswer();
+        if (userAnswer) {
+          await saveAnswer(message, userAnswer);
+          addChatMessage("Assistant", "Thanks! I have learned it.");
+        }
       }
+    })
+    .catch(err => {
+      console.error(err);
+      addChatMessage("Assistant", "⚠️ Server error.");
+    });
+}
 
-      const recognition = new SpeechRecognition();
-      recognition.lang = 'en-US';
-      recognition.interimResults = false;
-      recognition.maxAlternatives = 1;
+function addChatMessage(sender, text) {
+  const chatBox = document.getElementById("chatBox");
+  const message = document.createElement("div");
+  message.style.margin = "8px 0";
+  message.style.padding = "8px 12px";
+  message.style.borderRadius = "10px";
+  message.style.maxWidth = "80%";
+  message.style.wordWrap = "break-word";
+  message.style.background = sender === "You" ? "#d1e7ff" : "#e2e3e5";
+  message.innerHTML = `<strong>${sender}:</strong> ${text}`;
+  message.style.alignSelf = sender === "You" ? "flex-end" : "flex-start";
 
-      recognition.start();
-      recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript.trim();
-        console.log(transcript)
-        callback(transcript);
-      };
-      recognition.onerror = (event) => {
-        console.error("Voice error:", event.error);
-        speak("Sorry, I didn't catch that. Please try again.");
-      };
-    }
-  
+  chatBox.appendChild(message);
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+async function promptAnswer() {
+  return new Promise((resolve) => {
+    const reply = prompt("Please type the answer to teach me:");
+    resolve(reply && reply.trim() ? reply.trim() : null);
+  });
+}
