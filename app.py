@@ -134,6 +134,22 @@ def ask():
         print("🔥 Internal Server Error:", str(e))
         return jsonify({"error": "Internal server error", "details": str(e)}), 500
 
+@app.route("/regenerate-answer", methods=["POST"])
+def regenerate_answer():
+    data = request.get_json()
+    question = data.get("question", "").strip().lower()
+    last_answer = data.get("last_answer", "").strip()
+
+    if not question or not last_answer:
+        return jsonify({"error": "Both question and last_answer required"}), 400
+
+    alt_answer = load_and_predict_answer(
+        question,
+        collection=qa_collection,
+        exclude_answer=last_answer
+    )
+
+    return jsonify({"answer": alt_answer or None})
 
 @app.route("/search", methods=["POST"])
 def search():
@@ -141,10 +157,8 @@ def search():
     question = data.get("question", "").strip().lower()
     last_question = data.get("last_question", "").strip().lower()
 
-    # Identify modifier phrases
+    # Follow-up handling
     expand_phrases = ["describe more", "more details", "explain more", "expand"]
-
-    # If the current question is just a follow-up, use last_question
     true_question = last_question if question in expand_phrases else question
 
     if not true_question:
@@ -161,7 +175,10 @@ def search():
                     {"$set": {"answer": wiki_answer}}
                 )
             else:
-                qa_collection.insert_one({"question": true_question, "answer": wiki_answer})
+                qa_collection.insert_one({
+                    "question": true_question,
+                    "answer": wiki_answer
+                })
             train_qa_model(qa_collection)
         except Exception as e:
             print("❌ Failed to save/train from wiki:", e)
@@ -181,24 +198,6 @@ def search():
     })
 
 
-@app.route("/regenerate-answer", methods=["POST"])
-def regenerate_answer():
-    data = request.get_json()
-    question = data.get("question", "").strip().lower()
-    last_answer = data.get("last_answer", "").strip()
-
-    if not question or not last_answer:
-        return jsonify({"error": "Both question and last_answer required"}), 400
-
-    alt_answer = load_and_predict_answer(
-        question,
-        collection=qa_collection,
-        exclude_answer=last_answer
-    )
-
-    return jsonify({"answer": alt_answer or None})
-
-
 @app.route("/teach", methods=["POST"])
 def teach():
     data = request.get_json()
@@ -208,14 +207,27 @@ def teach():
     if not question or not answer:
         return jsonify({"error": "Both question and answer required"}), 400
 
-    existing = qa_collection.find_one({"question": question})
-    if existing:
-        qa_collection.update_one({"_id": existing["_id"]}, {"$set": {"answer": answer}})
-    else:
-        qa_collection.insert_one({"question": question, "answer": answer})
+    try:
+        existing = qa_collection.find_one({"question": question})
+        if existing:
+            old_answer = existing.get("answer", "")
+            if answer.lower() not in old_answer.lower():
+                new_answer = f"{old_answer} / {answer}"
+                qa_collection.update_one(
+                    {"_id": existing["_id"]},
+                    {"$set": {"answer": new_answer}}
+                )
+        else:
+            qa_collection.insert_one({"question": question, "answer": answer})
 
-    train_qa_model(qa_collection)
-    return jsonify({"message": "Learned successfully!"})
+        train_qa_model(qa_collection)
+        return jsonify({"message": "Learned successfully!"})
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to save or train: {str(e)}"}), 500
+
+
+
 
 
 @app.route("/teach-bulk", methods=["POST"])

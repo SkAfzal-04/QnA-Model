@@ -83,12 +83,11 @@ async function handleAsk(question) {
 }
 
 // === Search Now ===
-async function searchNow() {
+async function searchNow(fromChat = false) {
   if (!pendingQuestion) return;
 
   const expandPhrases = ["describe more", "more details", "explain more", "expand"];
   const isExpand = expandPhrases.includes(pendingQuestion.toLowerCase());
-
   const searchQuery = isExpand && lastQuestion ? lastQuestion : pendingQuestion;
 
   const res = await fetch('/search', {
@@ -102,13 +101,19 @@ async function searchNow() {
 
   if (data.answer) {
     qaResult.innerHTML = `🔍 Found on Wiki: ${data.answer}`;
-    speak(data.answer);
-    addChatMessage("Assistant", `${data.answer} (${data.source})`);
+
+    // If triggered from voice, speak. If from chat, only add to chat.
+    if (fromChat) {
+      addChatMessage("Assistant", `${data.answer} (${data.source})`);
+    } else {
+      speak(data.answer);
+    }
   } else {
     qaResult.innerHTML = `❌ Still couldn't find the answer.`;
     speak("Sorry, I still couldn't find the answer.");
   }
 }
+
 
 // === Teach Now ===
 async function teachNow() {
@@ -258,8 +263,8 @@ function sendMessage() {
         lastAnswer = data.answer;
         addChatMessage("Assistant", `${data.answer} (${data.source})`);
       } else {
-        addChatMessage("Assistant", `❌ I don't know. <button onclick="searchNow()">Search</button> <button onclick="teachNow()">Teach</button>`);
-        speak("I don't know. You can search or teach me.");
+        addChatMessage("Assistant", `❌ I don't know. <button onclick="searchNow(true)">Search</button> <button onclick="teachNow()">Teach</button>`);
+
       }
     });
 }
