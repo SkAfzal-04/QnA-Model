@@ -4,6 +4,8 @@ let lastAnswer = null;
 let isSpeaking = false;
 let synth = window.speechSynthesis;
 let currentUtterance = null;
+let isExpectingTeachingAnswer = false;
+
 
 // === Upload Fruit ===
 document.getElementById('uploadForm').onsubmit = async (e) => {
@@ -100,38 +102,49 @@ async function searchNow(fromChat = false) {
   const qaResult = document.getElementById('qaResult');
 
   if (data.answer) {
-    qaResult.innerHTML = `🔍 Found on Wiki: ${data.answer}`;
-
     // If triggered from voice, speak. If from chat, only add to chat.
     if (fromChat) {
       addChatMessage("Assistant", `${data.answer} (${data.source})`);
     } else {
+      qaResult.innerHTML = `🔍 Found on Wiki: ${data.answer}`;
       speak(data.answer);
     }
   } else {
+    if(fromChat){
+      addChatMessage("Assistant", "Still couldn't find the answer.");
+    }
+    else{
     qaResult.innerHTML = `❌ Still couldn't find the answer.`;
     speak("Sorry, I still couldn't find the answer.");
+    }
   }
 }
 
 // === Teach Now ===
-async function teachNow() {
+async function teachNow(fromChat = false) {
   if (!pendingQuestion) return;
-  speak("Please tell me the answer now.", () => {
-    listenVoice(async (response) => {
-      if (response.toLowerCase().includes("stop")) {
-        speak("Okay, cancelled.");
-        pendingQuestion = null;
-        return;
-      }
 
-      await saveAnswer(pendingQuestion, response);
-      document.getElementById('qaResult').innerHTML = `✅ Learned: "${pendingQuestion}" → "${response}"`;
-      speak("Thanks! I have learned the new answer.");
-      pendingQuestion = null;
+  if (fromChat) {
+    isExpectingTeachingAnswer = true;
+    addChatMessage("Assistant", `✏️ Please type the correct answer for: "${pendingQuestion}"`);
+  } else {
+    speak("Please tell me the answer now.", () => {
+      listenVoice(async (response) => {
+        if (response.toLowerCase().includes("stop")) {
+          speak("Okay, cancelled.");
+          pendingQuestion = null;
+          return;
+        }
+
+        await saveAnswer(pendingQuestion, response);
+        document.getElementById('qaResult').innerHTML = `✅ Learned: "${pendingQuestion}" → "${response}"`;
+        speak("Thanks! I have learned the new answer.");
+        pendingQuestion = null;
+      });
     });
-  });
+  }
 }
+
 
 // === Save Answer ===
 async function saveAnswer(question, answer) {
@@ -244,6 +257,18 @@ function sendMessage() {
 
   addChatMessage("You", message);
   input.value = "";
+
+  // Teaching response if expecting answer
+  if (isExpectingTeachingAnswer && pendingQuestion) {
+    isExpectingTeachingAnswer = false;
+    saveAnswer(pendingQuestion, message).then(() => {
+      addChatMessage("Assistant", `✅ Learned: "${pendingQuestion}" → "${message}"`);
+      pendingQuestion = null;
+    });
+    return;
+  }
+
+  // Normal asking logic
   pendingQuestion = message;
 
   fetch("/ask", {
@@ -262,11 +287,11 @@ function sendMessage() {
         lastAnswer = data.answer;
         addChatMessage("Assistant", `${data.answer} (${data.source})`);
       } else {
-        addChatMessage("Assistant", `❌ I don't know. <button onclick="searchNow(true)">Search</button> <button onclick="teachNow()">Teach</button>`);
-
+        addChatMessage("Assistant", `❌ I don't know. <button onclick="searchNow(true)">Search</button> <button onclick="teachNow(true)">Teach</button>`);
       }
     });
 }
+
 
 // === Add Chat Message ===
 function addChatMessage(sender, text) {
