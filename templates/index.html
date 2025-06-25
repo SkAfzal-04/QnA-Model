@@ -1,93 +1,133 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
+
 <head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Fruit & Voice Q&A Assistant</title>
   <style>
-
-  body {
-    font-family: Arial, sans-serif;
-    background: #f4f7fa;
-    padding: 30px;
-    margin: 0;
-  }
-
-  .container {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 30px;
-    justify-content: center;
-  }
-
-  .card {
-    background: white;
-    padding: 20px;
-    border-radius: 10px;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-    flex: 1 1 350px;
-    max-width: 100%;
-    box-sizing: border-box;
-  }
-
-  input,
-  button,
-  textarea {
-    width: 100%;
-    padding: 10px;
-    margin-top: 10px;
-    font-size: 16px;
-    border-radius: 6px;
-    border: 1px solid #ccc;
-    box-sizing: border-box;
-  }
-
-  button {
-    background: #007bff;
-    color: white;
-    cursor: pointer;
-    transition: background 0.3s ease;
-  }
-
-  button:hover {
-    background: #0056b3;
-  }
-
-  img {
-    max-width: 100%;
-    margin-top: 10px;
-    border-radius: 8px;
-  }
-
-  #uploadResult,
-  #predictResult,
-  #qaResult {
-    margin-top: 20px;
-  }
-
-  /* === Responsive for small screens === */
-  @media (max-width: 768px) {
-    .container {
-      flex-direction: column;
-      gap: 20px;
-    }
-
-    .card {
-      flex: 1 1 100%;
+    * {
+      box-sizing: border-box;
     }
 
     body {
-      padding: 15px;
+      font-family: Arial, sans-serif;
+      background: #f4f7fa;
+      margin: 0;
+      padding: 20px;
     }
-  }
-</style>
 
+    h1 {
+      text-align: center;
+      font-size: 2rem;
+      margin-bottom: 30px;
+      word-break: break-word;
+    }
+
+    .container {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      font-size: larger;
+    }
+
+    .card {
+      background: white;
+      margin: 10px;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+      width: 45%;
+      max-width: 100%;
+      overflow-wrap: break-word;
+    }
+
+    h3 {
+      font-size: 1.3rem;
+      margin-top: 0;
+    }
+
+    input,
+    button,
+    textarea {
+      width: 100%;
+      padding: 12px;
+      margin-top: 10px;
+      font-size: 1rem;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      overflow-wrap: break-word;
+    }
+
+    button {
+      background: #007bff;
+      color: white;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+
+    button:hover {
+      background: #0056b3;
+    }
+
+    #chatBox {
+    max-height: 300px;
+    overflow-y: auto;
+    background: #eef1f6;
+    padding: 10px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+    font-size: 1rem;
+    word-break: break-word;
+  }
+
+  .message {
+    padding: 10px;
+    margin: 8px 0;
+    border-radius: 12px;
+    max-width: 75%;
+    clear: both;
+  }
+
+  .user-msg {
+    background: #d1e7ff;
+    float: right;
+    text-align: right;
+  }
+
+  .bot-msg {
+    background: #ffffff;
+    float: left;
+    text-align: left;
+  }
+
+  #teachResult {
+    margin-top: 10px;
+    font-size: 0.95rem;
+    color: green;
+  }
+    @media (max-width: 769px) {
+      .container {
+        flex-direction: column;
+        flex-wrap: wrap;
+        justify-content: center;
+        font-size: larger;
+      }
+
+      .card {
+        width: 100%;
+        max-width: 500px;
+      }
+    }
+  </style>
 </head>
+
 <body>
 
   <h1>🍓 Fruit Classifier & Voice Q&A Assistant</h1>
 
   <div class="container">
 
-    <!-- Upload Fruit -->
     <div class="card">
       <h3>Upload & Train Fruit</h3>
       <form id="uploadForm">
@@ -98,31 +138,40 @@
       <div id="uploadResult"></div>
     </div>
 
-    <!-- Predict via Voice -->
     <div class="card">
       <h3>🎤 Predict Fruit (Voice Only)</h3>
       <button onclick="startVoicePrediction()">Start Voice Prediction</button>
       <div id="predictResult"></div>
     </div>
 
-    <!-- Ask & Teach -->
     <div class="card">
       <h3>🎙️ Ask / 📚 Teach</h3>
       <button onclick="startAsking()">Ask a Question</button>
       <button onclick="startTeaching()">Teach Me</button>
       <div id="qaResult"></div>
     </div>
-<div class="card" style="margin-top: 30px; max-width: 800px; margin-left: auto; margin-right: auto;">
+
+      <div class="card">
     <h3>💬 Chat with AI</h3>
-    <div id="chatBox" style="max-height: 300px; overflow-y: auto; background: #eef1f6; padding: 10px; border-radius: 10px; margin-bottom: 10px;">
-      <!-- Chat messages will appear here -->
-    </div>
-    <input type="text" id="chatInput" placeholder="Type your question..." onkeydown="if(event.key === 'Enter') sendMessage()" />
+    <div id="chatBox"></div>
+    <input type="text" id="chatInput" placeholder="Type your question..."
+      onkeydown="if(event.key === 'Enter') sendMessage()" />
     <button onclick="sendMessage()">Send</button>
-</div>
   </div>
 
-<script src="{{ url_for('static', filename='script.js') }}"></script>
+  <!-- ✅ New Teaching Card -->
+  <div class="card">
+    <h3>📚 Teach Me Something</h3>
+    <input type="text" id="teachQuestion" placeholder="Enter a question" />
+    <textarea id="teachAnswer" placeholder="Enter the answer..."></textarea>
+    <button onclick="submitTeaching()">Submit</button>
+    <div id="teachResult"></div>
+  </div>
 
+
+  </div>
+
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
+
 </html>

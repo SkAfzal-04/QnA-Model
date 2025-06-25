@@ -1,19 +1,25 @@
 let pendingQuestion = null;
+let lastQuestion = null;
+let lastAnswer = null;
+let isSpeaking = false;
+let synth = window.speechSynthesis;
+let currentUtterance = null;
 
-// Upload Fruit
-const uploadForm = document.getElementById('uploadForm');
-uploadForm.onsubmit = async (e) => {
+// === Upload Fruit ===
+document.getElementById('uploadForm').onsubmit = async (e) => {
   e.preventDefault();
-  const formData = new FormData(uploadForm);
+  const formData = new FormData(e.target);
   const res = await fetch('/add-fruit', { method: 'POST', body: formData });
   const data = await res.json();
-  document.getElementById('uploadResult').innerHTML = data.error
+  const result = document.getElementById('uploadResult');
+  result.innerHTML = data.error
     ? `<p style="color:red">${data.error}</p>`
     : `<p style="color:green">${data.message}</p><img src="${data.image_url}" />`;
 };
 
-// Predict Fruit via Voice
+// === Predict via Voice ===
 async function startVoicePrediction() {
+  if (cancelIfSpeaking()) return;
   speak("Please say the fruit name.", () => {
     listenVoice(async (spokenText) => {
       const res = await fetch('/predict', {
@@ -22,111 +28,108 @@ async function startVoicePrediction() {
         body: JSON.stringify({ text: spokenText })
       });
       const data = await res.json();
+      const result = document.getElementById('predictResult');
       if (data.error) {
         speak("Sorry, I could not recognize the fruit.");
-        document.getElementById('predictResult').innerHTML = `<p style="color:red">${data.error}</p>`;
+        result.innerHTML = `<p style="color:red">${data.error}</p>`;
       } else {
         speak(`It looks like ${data.prediction}`);
-        document.getElementById('predictResult').innerHTML = `
-          <p style="color:blue">Prediction: ${data.prediction}</p>
-          <img src="${data.image_url}" />
-        `;
+        result.innerHTML = `<p style="color:blue">Prediction: ${data.prediction}</p><img src="${data.image_url}" />`;
       }
     });
   });
 }
 
-// Ask via Voice
+// === Ask a Question ===
 async function startAsking() {
+  if (cancelIfSpeaking()) return;
+  updateAskButton("Listening...");
   speak("Please ask your question.", () => {
-    listenVoice(async (question) => {
-      pendingQuestion = question;
-
-      const res = await fetch('/ask', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question })
-      });
-
-      const data = await res.json();
-
-      if (data.answer) {
-        document.getElementById('qaResult').innerText = `Answer: ${data.answer} (source: ${data.source})`;
-
-        speak(`${data.answer}`, () => {
-          setTimeout(() => {
-            speak("Do you want a different explanation? Say yes or no.", () => {
-              setTimeout(() => {
-                listenVoice(async (reply) => {
-                  const response = reply.toLowerCase();
-
-                  if (response.includes("yes")) {
-                    const regenRes = await fetch('/regenerate-answer', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ question: pendingQuestion, exclude: data.answer })
-                    });
-
-                    const regenData = await regenRes.json();
-
-                    if (regenData.answer && regenData.answer !== data.answer) {
-                      speak(`Here is another explanation: ${regenData.answer}`);
-                      document.getElementById('qaResult').innerText = `Alternate Answer: ${regenData.answer} (regenerated)`;
-                    } else {
-                      speak("Sorry, I couldn't find a different explanation.");
-                    }
-                  } else {
-                    speak("Okay.");
-                  }
-                }, 8000);
-              }, 1000);
-            });
-          }, 1000);
-        });
-      }
-
-      else {
-        speak("I don't know the answer. You can tell me or say stop.", () => {
-          setTimeout(() => {
-            listenVoice(async (response) => {
-              const input = response.toLowerCase();
-
-              if (input.includes("stop")) {
-                speak("Okay, cancelled.");
-                pendingQuestion = null;
-                return;
-              }
-
-              await saveAnswer(pendingQuestion, response);
-              speak("Thanks! I have learned the new answer.");
-              document.getElementById('qaResult').innerText = `Learned: "${pendingQuestion}" → "${response}"`;
-              pendingQuestion = null;
-            }, 10000);
-          }, 1000);
-        });
-      }
-    }, 8000);
+    listenVoice(handleAsk);
   });
 }
 
-// Teach Answer
-async function startTeaching() {
-  if (!pendingQuestion) {
-    speak("Say the question you want to teach.", () => {
-      listenVoice((question) => {
-        pendingQuestion = question;
-        speak("Now say the answer.", () => {
-          listenVoice((answer) => saveAnswer(pendingQuestion, answer));
-        });
-      });
-    });
+// === Handle Voice or Chat Ask ===
+async function handleAsk(question) {
+  updateAskButton("Processing...");
+  pendingQuestion = question;
+  const res = await fetch('/ask', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      question,
+      last_question: lastQuestion,
+      last_answer: lastAnswer
+    })
+  });
+  const data = await res.json();
+  const qaResult = document.getElementById('qaResult');
+  lastQuestion = pendingQuestion;
+
+  if (data.answer) {
+    lastAnswer = data.answer;
+    qaResult.innerHTML = `Answer: ${data.answer} (${data.source})`;
+    speak(data.answer);
   } else {
-    speak("Say the answer for your earlier question.", () => {
-      listenVoice((answer) => saveAnswer(pendingQuestion, answer));
-    });
+    qaResult.innerHTML = `
+      <p>❌ I don't know the answer.</p>
+      <button onclick="searchNow()">🔍 Search</button>
+      <button onclick="teachNow()">✏️ Teach</button>
+    `;
+    speak("I don't know the answer. You can search or teach me.");
+  }
+
+  updateAskButton("Ask a Question");
+}
+
+// === Search Now ===
+async function searchNow() {
+  if (!pendingQuestion) return;
+
+  const expandPhrases = ["describe more", "more details", "explain more", "expand"];
+  const isExpand = expandPhrases.includes(pendingQuestion.toLowerCase());
+
+  const searchQuery = isExpand && lastQuestion ? lastQuestion : pendingQuestion;
+
+  const res = await fetch('/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question: searchQuery, last_question: lastQuestion })
+  });
+
+  const data = await res.json();
+  const qaResult = document.getElementById('qaResult');
+
+  if (data.answer) {
+    qaResult.innerHTML = `🔍 Found on Wiki: ${data.answer}`;
+    speak(data.answer);
+    addChatMessage("Assistant", `${data.answer} (${data.source})`);
+  } else {
+    qaResult.innerHTML = `❌ Still couldn't find the answer.`;
+    speak("Sorry, I still couldn't find the answer.");
   }
 }
 
+// === Teach Now ===
+async function teachNow() {
+  if (!pendingQuestion) return;
+  speak("Please tell me the answer now.", () => {
+    listenVoice(async (response) => {
+      if (response.toLowerCase().includes("stop")) {
+        speak("Okay, cancelled.");
+        pendingQuestion = null;
+        return;
+      }
+
+      await saveAnswer(pendingQuestion, response);
+      document.getElementById('qaResult').innerHTML = `✅ Learned: "${pendingQuestion}" → "${response}"`;
+      speak("Thanks! I have learned the new answer.");
+      pendingQuestion = null;
+    });
+  });
+}
+
+// === Save Answer ===
 async function saveAnswer(question, answer) {
   const res = await fetch('/teach', {
     method: 'POST',
@@ -134,34 +137,75 @@ async function saveAnswer(question, answer) {
     body: JSON.stringify({ question, answer })
   });
   const data = await res.json();
-  speak("Answer saved successfully.");
-  document.getElementById('qaResult').innerText = data.message || "Learned.";
-  pendingQuestion = null;
+  speak(data.message || "Answer saved successfully.");
 }
 
-// Speak
-function speak(text, callback) {
-  const msg = new SpeechSynthesisUtterance(text);
-  msg.lang = 'en-US';
-  speechSynthesis.speak(msg);
-  msg.onend = () => {
-    if (callback) callback();
-  };
-}
+// === Teach via Form ===
+async function submitTeaching() {
+  const question = document.getElementById('teachQuestion').value.trim();
+  const answer = document.getElementById('teachAnswer').value.trim();
+  const result = document.getElementById('teachResult');
 
-// Listen
-function listenVoice(callback, duration = 8000) {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    alert("Your browser does not support speech recognition.");
+  if (!question || !answer) {
+    result.innerText = "❌ Please provide both question and answer.";
     return;
   }
 
+  const res = await fetch('/teach', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question, answer })
+  });
+
+  const data = await res.json();
+  result.innerText = data.message || "✅ Learned.";
+  speak("Thanks, I have learned that.");
+  document.getElementById('teachQuestion').value = "";
+  document.getElementById('teachAnswer').value = "";
+  pendingQuestion = null;
+}
+
+// === Speak ===
+function speak(text, callback) {
+  stopSpeaking();
+  const msg = new SpeechSynthesisUtterance(text);
+  msg.lang = 'en-US';
+  currentUtterance = msg;
+  isSpeaking = true;
+  updateAskButton("Speaking...");
+  synth.speak(msg);
+  msg.onend = () => {
+    isSpeaking = false;
+    updateAskButton("Ask a Question");
+    if (callback) callback();
+  };
+}
+function stopSpeaking() {
+  if (isSpeaking) {
+    synth.cancel();
+    isSpeaking = false;
+    updateAskButton("Ask a Question");
+  }
+}
+function cancelIfSpeaking() {
+  if (isSpeaking) {
+    stopSpeaking();
+    return true;
+  }
+  return false;
+}
+
+// === Listen ===
+function listenVoice(callback, duration = 8000) {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    alert("Speech recognition not supported.");
+    return;
+  }
   const recognition = new SpeechRecognition();
   recognition.lang = 'en-US';
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
-
   let responded = false;
 
   recognition.onresult = (event) => {
@@ -169,23 +213,26 @@ function listenVoice(callback, duration = 8000) {
     responded = true;
     callback(transcript);
   };
-
-  recognition.onerror = (event) => {
-    console.error("Voice error:", event.error);
-    speak("Sorry, I didn't catch that. Please try again.");
+  recognition.onerror = () => {
+    speak("Sorry, I didn't catch that.");
+  };
+  recognition.onend = () => {
+    if (!responded) updateAskButton("Ask a Question");
   };
 
   recognition.start();
-
   setTimeout(() => {
     if (!responded) recognition.stop();
   }, duration);
 }
 
-//
-// 🧠 Chat Interface
-//
+// === Ask Button Label ===
+function updateAskButton(label) {
+  const btn = document.querySelector("button[onclick='startAsking()']");
+  if (btn) btn.innerText = label;
+}
 
+// === Chat Functionality ===
 function sendMessage() {
   const input = document.getElementById("chatInput");
   const message = input.value.trim();
@@ -198,46 +245,31 @@ function sendMessage() {
   fetch("/ask", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question: message })
+    body: JSON.stringify({
+      question: message,
+      last_question: lastQuestion,
+      last_answer: lastAnswer
+    })
   })
     .then(res => res.json())
-    .then(async data => {
+    .then(data => {
+      lastQuestion = message;
       if (data.answer) {
+        lastAnswer = data.answer;
         addChatMessage("Assistant", `${data.answer} (${data.source})`);
       } else {
-        addChatMessage("Assistant", "I don't know. Please teach me.");
-        const userAnswer = await promptAnswer();
-        if (userAnswer) {
-          await saveAnswer(message, userAnswer);
-          addChatMessage("Assistant", "Thanks! I have learned it.");
-        }
+        addChatMessage("Assistant", `❌ I don't know. <button onclick="searchNow()">Search</button> <button onclick="teachNow()">Teach</button>`);
+        speak("I don't know. You can search or teach me.");
       }
-    })
-    .catch(err => {
-      console.error(err);
-      addChatMessage("Assistant", "⚠️ Server error.");
     });
 }
 
+// === Add Chat Message ===
 function addChatMessage(sender, text) {
   const chatBox = document.getElementById("chatBox");
   const message = document.createElement("div");
-  message.style.margin = "8px 0";
-  message.style.padding = "8px 12px";
-  message.style.borderRadius = "10px";
-  message.style.maxWidth = "80%";
-  message.style.wordWrap = "break-word";
-  message.style.background = sender === "You" ? "#d1e7ff" : "#e2e3e5";
+  message.className = `message ${sender === "You" ? "user-msg" : "bot-msg"}`;
   message.innerHTML = `<strong>${sender}:</strong> ${text}`;
-  message.style.alignSelf = sender === "You" ? "flex-end" : "flex-start";
-
   chatBox.appendChild(message);
   chatBox.scrollTop = chatBox.scrollHeight;
-}
-
-async function promptAnswer() {
-  return new Promise((resolve) => {
-    const reply = prompt("Please type the answer to teach me:");
-    resolve(reply && reply.trim() ? reply.trim() : null);
-  });
 }
