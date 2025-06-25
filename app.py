@@ -134,6 +134,7 @@ def ask():
         print("🔥 Internal Server Error:", str(e))
         return jsonify({"error": "Internal server error", "details": str(e)}), 500
 
+
 @app.route("/regenerate-answer", methods=["POST"])
 def regenerate_answer():
     data = request.get_json()
@@ -225,6 +226,7 @@ def teach():
 
     except Exception as e:
         return jsonify({"error": f"Failed to save or train: {str(e)}"}), 500
+
 
 
 

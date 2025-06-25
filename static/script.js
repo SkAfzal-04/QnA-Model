@@ -114,7 +114,6 @@ async function searchNow(fromChat = false) {
   }
 }
 
-
 // === Teach Now ===
 async function teachNow() {
   if (!pendingQuestion) return;
