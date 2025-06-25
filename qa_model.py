@@ -3,7 +3,7 @@ import joblib
 import random
 from sentence_transformers import SentenceTransformer, util
 
-# === Cache Setup ===
+# === Cache and Model Paths ===
 CACHE_DIR = "/app/cache"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
@@ -11,62 +11,104 @@ os.environ["HF_HOME"] = CACHE_DIR
 os.environ["TRANSFORMERS_CACHE"] = CACHE_DIR
 os.environ["TORCH_HOME"] = CACHE_DIR
 
-# === Model Init ===
-model = SentenceTransformer("all-MiniLM-L6-v2")
 model_path = "qa_model_embeddings.pkl"
 
-# === Global memory for recent interaction
+# === Load SentenceTransformer ===
+model = SentenceTransformer("all-MiniLM-L6-v2")
+
+# === Global: Model Memory
+embeddings = []
+questions = []
+answers = []
+
+# === Global memory for last interaction
 last_query = None
 last_answer = None
 
-# === Helper: Embed a text
+# === Helper: Embed Text
 def embed(text):
-    """Convert text to vector"""
     return model.encode(text, convert_to_tensor=True)
 
-# === Helper: Train and save Q&A model
+# === Train and Save the Model ===
 def train_qa_model(collection):
-    """Train and save the semantic model from DB"""
-    data = list(collection.find())
-    questions = [item["question"] for item in data]
-    answers = [item["answer"] for item in data]
-    embeddings = [embed(q) for q in questions]
-    joblib.dump((embeddings, questions, answers), model_path)
-    print("✅ Semantic Q&A model trained and saved.")
+    global embeddings, questions, answers
 
-# === Helper: Shorten long text to 1-2 sentences
+    print("⚙️ Training Q&A model...")
+    data = list(collection.find())
+
+    if not data:
+        print("⚠️ No Q&A data available to train.")
+        return "❌ Training failed: No data found."
+
+    embeddings = []
+    questions = []
+    answers = []
+
+    for item in data:
+        q = item["question"].strip().lower()
+        raw_answer = item["answer"].strip()
+        for part in [a.strip() for a in raw_answer.split("/") if a.strip()]:
+            questions.append(q)
+            answers.append(raw_answer)  # Save full answer for output
+            embeddings.append(embed(q))
+
+    try:
+        joblib.dump((embeddings, questions, answers), model_path)
+        print("✅ Semantic Q&A model trained and saved.")
+        return "✅ Semantic Q&A model trained and reloaded."
+    except Exception as e:
+        print("❌ Failed to save model:", e)
+        return f"❌ Model save failed: {e}"
+
+  
+# === Load Model into Memory (initially or on fallback)
+def load_model():
+    global embeddings, questions, answers
+    try:
+        embeddings, questions, answers = joblib.load(model_path)
+        return True
+    except Exception as e:
+        print("❌ Failed to load Q&A model:", e)
+        return False
+
+# === Shorten long answers
 def shorten_text(text, max_sentences=2):
     try:
-        sentences = text.strip().split(".")
-        trimmed = ". ".join([s.strip() for s in sentences[:max_sentences]])
+        sentences = [s.strip() for s in text.strip().split(".") if s.strip()]
+        trimmed = ". ".join(sentences[:max_sentences])
         return trimmed + "." if trimmed and not trimmed.endswith(".") else trimmed
     except:
         return text
 
-# === Core: Answer loader and predictor
+# === Predict Best Answer
 def load_and_predict_answer(
     query,
-    collection,
+    collection=None,
     similarity_threshold=0.45,
     return_multiple=False,
     exclude_answer=None,
     redirect=False,
     short=False
 ):
-    global last_query, last_answer
+    global last_query, last_answer, embeddings, questions, answers
+
     try:
-        # Load saved embeddings and data
-        embeddings, questions, answers = joblib.load(model_path)
+        if not embeddings or not questions or not answers:
+            if not load_model():
+                if collection:
+                    print("📦 Loading from DB due to missing model...")
+                    train_qa_model(collection)
+                else:
+                    print("❌ No model or collection to predict from.")
+                    return None
+
         query_embedding = embed(query)
-
-        # Calculate cosine similarity scores
         scores = [util.pytorch_cos_sim(query_embedding, emb).item() for emb in embeddings]
-        matched = [(score, i) for i, score in enumerate(scores) if score >= similarity_threshold]
 
+        matched = [(score, i) for i, score in enumerate(scores) if score >= similarity_threshold]
         if not matched:
             return None
 
-        # Sort matches by score and find top-scoring ones
         matched.sort(reverse=True)
         top_score = matched[0][0]
         top_matches = [i for score, i in matched if abs(score - top_score) < 0.01]
@@ -78,21 +120,17 @@ def load_and_predict_answer(
                 selected_answer = answers[i]
                 break
 
-        # Fallback if none found
         if not selected_answer:
             selected_answer = answers[top_matches[0]]
 
-        # Alternative if redirection requested
         if redirect:
             alt_matches = [i for _, i in matched if answers[i] != exclude_answer]
             if alt_matches:
                 selected_answer = answers[random.choice(alt_matches)]
 
-        # Shorten if requested
         if short:
             selected_answer = shorten_text(selected_answer)
 
-        # Save last interaction
         last_query = query
         last_answer = selected_answer
         return selected_answer

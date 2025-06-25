@@ -1,3 +1,4 @@
+// === Global State ===
 let pendingQuestion = null;
 let lastQuestion = null;
 let lastAnswer = null;
@@ -5,7 +6,6 @@ let isSpeaking = false;
 let synth = window.speechSynthesis;
 let currentUtterance = null;
 let isExpectingTeachingAnswer = false;
-
 
 // === Upload Fruit ===
 document.getElementById('uploadForm').onsubmit = async (e) => {
@@ -42,7 +42,7 @@ async function startVoicePrediction() {
   });
 }
 
-// === Ask a Question ===
+// === Start Asking via Voice ===
 async function startAsking() {
   if (cancelIfSpeaking()) return;
   updateAskButton("Listening...");
@@ -51,10 +51,11 @@ async function startAsking() {
   });
 }
 
-// === Handle Voice or Chat Ask ===
-async function handleAsk(question) {
+// === Handle Ask (Shared for Voice & Chat) ===
+async function handleAsk(question, fromChat = false) {
   updateAskButton("Processing...");
   pendingQuestion = question;
+
   const res = await fetch('/ask', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -65,26 +66,55 @@ async function handleAsk(question) {
     })
   });
   const data = await res.json();
-  const qaResult = document.getElementById('qaResult');
-  lastQuestion = pendingQuestion;
+  lastQuestion = question;
+
+  if (data.source === "skip") return;
+
+  if (data.source === "correction") {
+    isExpectingTeachingAnswer = true;
+    if (fromChat) {
+      addChatMessage("Assistant", "❌ That may be wrong. Please provide the correct answer.");
+    } else {
+      document.getElementById('qaResult').innerHTML = `❌ That may be incorrect. Please tell me the correct answer.`;
+      speak("Oops! Please tell me the correct answer so I can learn it.");
+    }
+    return;
+  }
+
+  if (data.source === "learned") {
+    if (fromChat) {
+      addChatMessage("Assistant", data.answer || "✅ Learned successfully.");
+    } else {
+      document.getElementById('qaResult').innerHTML = `✅ Thanks! I've learned that.`;
+      speak("Thanks! I’ve updated my knowledge.");
+    }
+    return;
+  }
 
   if (data.answer) {
     lastAnswer = data.answer;
-    qaResult.innerHTML = `Answer: ${data.answer} (${data.source})`;
-    speak(data.answer);
+    if (fromChat) {
+      addChatMessage("Assistant", `${data.answer} (${data.source})`);
+    } else {
+      document.getElementById('qaResult').innerHTML = `Answer: ${data.answer} (${data.source})`;
+      speak(data.answer);
+    }
   } else {
-    qaResult.innerHTML = `
-      <p>❌ I don't know the answer.</p>
-      <button onclick="searchNow()">🔍 Search</button>
-      <button onclick="teachNow()">✏️ Teach</button>
-    `;
-    speak("I don't know the answer. You can search or teach me.");
+    if (fromChat) {
+      addChatMessage("Assistant", `❌ I don't know. <button onclick="searchNow(true)">Search</button> <button onclick="teachNow(true)">Teach</button>`);
+    } else {
+      document.getElementById('qaResult').innerHTML = `
+        <p>❌ I don't know the answer.</p>
+        <button onclick="searchNow()">🔍 Search</button>
+        <button onclick="teachNow()">✏️ Teach</button>
+      `;
+      speak("I don't know the answer. You can search or teach me.");
+    }
   }
-
   updateAskButton("Ask a Question");
 }
 
-// === Search Now ===
+// === Unified Search Now ===
 async function searchNow(fromChat = false) {
   if (!pendingQuestion) return;
 
@@ -97,30 +127,28 @@ async function searchNow(fromChat = false) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ question: searchQuery, last_question: lastQuestion })
   });
-
   const data = await res.json();
-  const qaResult = document.getElementById('qaResult');
 
   if (data.answer) {
-    // If triggered from voice, speak. If from chat, only add to chat.
+    const responseText = `${data.answer} (${data.source})`;
     if (fromChat) {
-      addChatMessage("Assistant", `${data.answer} (${data.source})`);
+      addChatMessage("Assistant", responseText);
     } else {
-      qaResult.innerHTML = `🔍 Found on Wiki: ${data.answer}`;
+      document.getElementById('qaResult').innerHTML = `🔍 Found on Wiki: ${data.answer}`;
       speak(data.answer);
     }
   } else {
-    if(fromChat){
-      addChatMessage("Assistant", "Still couldn't find the answer.");
-    }
-    else{
-    qaResult.innerHTML = `❌ Still couldn't find the answer.`;
-    speak("Sorry, I still couldn't find the answer.");
+    const msg = "❌ Still couldn't find the answer.";
+    if (fromChat) {
+      addChatMessage("Assistant", msg);
+    } else {
+      document.getElementById('qaResult').innerHTML = msg;
+      speak("Sorry, I still couldn't find the answer.");
     }
   }
 }
 
-// === Teach Now ===
+// === Unified Teach Now ===
 async function teachNow(fromChat = false) {
   if (!pendingQuestion) return;
 
@@ -135,7 +163,6 @@ async function teachNow(fromChat = false) {
           pendingQuestion = null;
           return;
         }
-
         await saveAnswer(pendingQuestion, response);
         document.getElementById('qaResult').innerHTML = `✅ Learned: "${pendingQuestion}" → "${response}"`;
         speak("Thanks! I have learned the new answer.");
@@ -144,7 +171,6 @@ async function teachNow(fromChat = false) {
     });
   }
 }
-
 
 // === Save Answer ===
 async function saveAnswer(question, answer) {
@@ -157,32 +183,37 @@ async function saveAnswer(question, answer) {
   speak(data.message || "Answer saved successfully.");
 }
 
-// === Teach via Form ===
-async function submitTeaching() {
-  const question = document.getElementById('teachQuestion').value.trim();
-  const answer = document.getElementById('teachAnswer').value.trim();
-  const result = document.getElementById('teachResult');
+// === Chat Message Sender ===
+function sendMessage() {
+  const input = document.getElementById("chatInput");
+  const message = input.value.trim();
+  if (!message) return;
+  addChatMessage("You", message);
+  input.value = "";
 
-  if (!question || !answer) {
-    result.innerText = "❌ Please provide both question and answer.";
+  if (isExpectingTeachingAnswer && pendingQuestion) {
+    isExpectingTeachingAnswer = false;
+    fetch("/teach", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: pendingQuestion, answer: message })
+    })
+      .then(res => res.json())
+      .then(data => {
+        addChatMessage("Assistant", `✅ Learned: "${pendingQuestion}" → "${message}"`);
+        pendingQuestion = null;
+      })
+      .catch(err => {
+        console.error("Teach error:", err);
+        addChatMessage("Assistant", "⚠️ Failed to teach. Try again.");
+      });
     return;
   }
 
-  const res = await fetch('/teach', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question, answer })
-  });
-
-  const data = await res.json();
-  result.innerText = data.message || "✅ Learned.";
-  speak("Thanks, I have learned that.");
-  document.getElementById('teachQuestion').value = "";
-  document.getElementById('teachAnswer').value = "";
-  pendingQuestion = null;
+  handleAsk(message, true);
 }
 
-// === Speak ===
+// === Utilities ===
 function speak(text, callback) {
   stopSpeaking();
   const msg = new SpeechSynthesisUtterance(text);
@@ -197,6 +228,7 @@ function speak(text, callback) {
     if (callback) callback();
   };
 }
+
 function stopSpeaking() {
   if (isSpeaking) {
     synth.cancel();
@@ -204,6 +236,7 @@ function stopSpeaking() {
     updateAskButton("Ask a Question");
   }
 }
+
 function cancelIfSpeaking() {
   if (isSpeaking) {
     stopSpeaking();
@@ -212,7 +245,6 @@ function cancelIfSpeaking() {
   return false;
 }
 
-// === Listen ===
 function listenVoice(callback, duration = 8000) {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
@@ -243,57 +275,11 @@ function listenVoice(callback, duration = 8000) {
   }, duration);
 }
 
-// === Ask Button Label ===
 function updateAskButton(label) {
   const btn = document.querySelector("button[onclick='startAsking()']");
   if (btn) btn.innerText = label;
 }
 
-// === Chat Functionality ===
-function sendMessage() {
-  const input = document.getElementById("chatInput");
-  const message = input.value.trim();
-  if (!message) return;
-
-  addChatMessage("You", message);
-  input.value = "";
-
-  // Teaching response if expecting answer
-  if (isExpectingTeachingAnswer && pendingQuestion) {
-    isExpectingTeachingAnswer = false;
-    saveAnswer(pendingQuestion, message).then(() => {
-      addChatMessage("Assistant", `✅ Learned: "${pendingQuestion}" → "${message}"`);
-      pendingQuestion = null;
-    });
-    return;
-  }
-
-  // Normal asking logic
-  pendingQuestion = message;
-
-  fetch("/ask", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      question: message,
-      last_question: lastQuestion,
-      last_answer: lastAnswer
-    })
-  })
-    .then(res => res.json())
-    .then(data => {
-      lastQuestion = message;
-      if (data.answer) {
-        lastAnswer = data.answer;
-        addChatMessage("Assistant", `${data.answer} (${data.source})`);
-      } else {
-        addChatMessage("Assistant", `❌ I don't know. <button onclick="searchNow(true)">Search</button> <button onclick="teachNow(true)">Teach</button>`);
-      }
-    });
-}
-
-
-// === Add Chat Message ===
 function addChatMessage(sender, text) {
   const chatBox = document.getElementById("chatBox");
   const message = document.createElement("div");

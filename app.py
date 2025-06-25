@@ -9,6 +9,8 @@ import cloudinary.uploader
 from train_model import train_classifier_model, predict_class
 from qa_model import train_qa_model, load_and_predict_answer, shorten_text, last_answer, last_query
 from wiki_search import search_wikipedia
+from utils.feedback_utils import is_negative_feedback, is_shorten_command, is_expand_command,is_cancel_feedback,is_casual_followup
+
 
 # === Setup ===
 load_dotenv()
@@ -25,6 +27,12 @@ cloudinary.config(
     api_key=os.getenv("CLOUDINARY_API_KEY"),
     api_secret=os.getenv("CLOUDINARY_API_SECRET")
 )
+
+# === Global States for Correction Learning ===
+pending_correction = False
+last_failed_question = None
+last_real_question = None
+
 
 # === ROUTES ===
 
@@ -67,62 +75,87 @@ def predict():
     return jsonify({"error": "No match found."}), 404
 
 
-
 @app.route("/ask", methods=["POST"])
 def ask():
+    global pending_correction, last_failed_question, last_real_question
+
     try:
         data = request.get_json() or {}
-        question = str(data.get("question", "") or "").strip().lower()
+        question = str(data.get("question", "")).strip().lower()
         last_question = str(data.get("last_question", "") or "").strip().lower()
-        last_answer = str(data.get("last_answer", "") or "").strip()
+        prev_answer = str(data.get("last_answer", "") or "").strip()
 
         if not question:
             return jsonify({"error": "Question is required"}), 400
 
-        # Check for modifiers
-        short_phrases = ["tell shortly", "write short", "short", "summarize", "shortly"]
-        expand_phrases = ["describe more", "more details", "explain more", "expand"]
+        if is_casual_followup(question):
+            return jsonify({"answer": None, "source": "skip", "message": "No response needed."})
 
-        is_short = question in short_phrases
-        is_expand = question in expand_phrases
+        if pending_correction and is_cancel_feedback(question):
+            pending_correction = False
+            last_failed_question = None
+            return jsonify({"answer": "Okay, no changes made.", "source": "cancelled"})
 
-        true_question = last_question if (is_short or is_expand) and last_question else question
+        if pending_correction and last_failed_question:
+            existing = qa_collection.find_one({"question": last_failed_question})
+            if existing:
+                old = existing.get("answer", "")
+                parts = [part.strip().lower() for part in old.split("/")]
+                if question.lower() not in parts:
+                    new_answer = old + " / " + question
+                else:
+                    new_answer = old
+                qa_collection.update_one(
+                    {"question": last_failed_question},
+                    {"$set": {"answer": new_answer}},
+                    upsert=True
+                )
+            else:
+                qa_collection.insert_one({"question": last_failed_question, "answer": question})
+
+            train_qa_model(qa_collection)
+            pending_correction = False
+            last_failed_question = None
+            return jsonify({
+                "answer": f"✅ Learned: \"{last_real_question}\" → \"{question}\"",
+                "source": "learned"
+            })
+
+        if is_negative_feedback(question):
+            pending_correction = True
+            last_failed_question = last_real_question or last_question
+            return jsonify({
+                "answer": "❌ That may be wrong. Please provide the correct answer.",
+                "source": "correction"
+            })
+
+        is_short = is_shorten_command(question)
+        is_expand = is_expand_command(question)
+        real_q = last_question if (is_short or is_expand) and last_question else question
+        last_real_question = real_q
 
         answer = load_and_predict_answer(
-            true_question,
+            real_q,
             qa_collection,
             return_multiple=is_expand,
-            exclude_answer=last_answer if last_answer else None
+            exclude_answer=prev_answer if prev_answer else None,
+            short=is_short
         )
 
         if answer:
-            if is_short and len(answer) > 120:
-                answer = answer[:120].rsplit('.', 1)[0] + "..."
-            return jsonify({
-                "answer": answer,
-                "source": "local",
-                "can_reteach": True
-            })
+            return jsonify({"answer": answer, "source": "local", "can_reteach": True})
 
-        # If expand requested but no answer found locally, search online
-        if is_expand:
-            wiki_answer = search_wikipedia(true_question)
-            if wiki_answer:
-                return jsonify({
-                    "answer": wiki_answer,
-                    "source": "wiki",
-                    "can_reteach": True,
-                    "can_save": True
-                })
-            else:
-                return jsonify({
-                    "answer": None,
-                    "source": "none",
-                    "can_search": True,
-                    "can_teach": True
-                })
+        wiki_answer = search_wikipedia(real_q)
+        if wiki_answer:
+            qa_collection.update_one(
+                {"question": real_q},
+                {"$set": {"answer": wiki_answer}},
+                upsert=True
+            )
+            train_qa_model(qa_collection)
+            return jsonify({"answer": wiki_answer, "source": "wiki", "can_reteach": True})
 
-        # If no answer found at all, prompt to teach or search
+        last_failed_question = real_q
         return jsonify({
             "answer": None,
             "source": "none",
@@ -212,8 +245,9 @@ def teach():
         existing = qa_collection.find_one({"question": question})
         if existing:
             old_answer = existing.get("answer", "")
-            if answer.lower() not in old_answer.lower():
-                new_answer = f"{old_answer} / {answer}"
+            parts = [part.strip().lower() for part in old_answer.split("/")]
+            if answer.lower() not in parts:
+                new_answer = old_answer + " / " + answer
                 qa_collection.update_one(
                     {"_id": existing["_id"]},
                     {"$set": {"answer": new_answer}}
@@ -226,7 +260,6 @@ def teach():
 
     except Exception as e:
         return jsonify({"error": f"Failed to save or train: {str(e)}"}), 500
-
 
 
 
