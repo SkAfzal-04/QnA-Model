@@ -5,7 +5,7 @@ model = SentenceTransformer('all-MiniLM-L6-v2')
 
 # === Feedback Phrases ===
 negative_examples = [
-    "no you are wrong", "you're wrong", "that's incorrect", "wrong answer",
+    "no","no you are wrong", "you're wrong", "that's incorrect", "wrong answer",
     "not true", "not correct", "that's not correct", "that's not right",
     "i don't think so", "you are mistaken", "incorrect", "that's false",
     "you are wrong", "i disagree", "not really", "nope", "nah", "that’s not what i meant",

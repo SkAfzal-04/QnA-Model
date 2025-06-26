@@ -19,28 +19,90 @@ document.getElementById('uploadForm').onsubmit = async (e) => {
     : `<p style="color:green">${data.message}</p><img src="${data.image_url}" />`;
 };
 
-// === Predict via Voice ===
+
+  async function submitTeaching() {
+    const question = document.getElementById("teachQuestion").value.trim();
+    const answer = document.getElementById("teachAnswer").value.trim();
+    const resultBox = document.getElementById("teachResult");
+
+    if (!question || !answer) {
+      resultBox.textContent = "❌ Both question and answer are required.";
+      resultBox.style.color = "red";
+      return;
+    }
+
+    try {
+      const response = await fetch("/teach", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ question, answer })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        resultBox.textContent = data.message || "✅ Taught successfully!";
+        resultBox.style.color = "green";
+        // Optional: clear inputs after success
+        document.getElementById("teachQuestion").value = "";
+        document.getElementById("teachAnswer").value = "";
+      } else {
+        resultBox.textContent = data.error || "❌ Failed to teach.";
+        resultBox.style.color = "red";
+      }
+
+    } catch (error) {
+      console.error("Error:", error);
+      resultBox.textContent = "❌ Something went wrong.";
+      resultBox.style.color = "red";
+    }
+  }
+
+
+
 async function startVoicePrediction() {
   if (cancelIfSpeaking()) return;
+
+  const btn = document.querySelector("button[onclick='startVoicePrediction()']");
+  if (btn) btn.innerText = "Speaking...";
+
   speak("Please say the fruit name.", () => {
-    listenVoice(async (spokenText) => {
-      const res = await fetch('/predict', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: spokenText })
-      });
-      const data = await res.json();
-      const result = document.getElementById('predictResult');
-      if (data.error) {
-        speak("Sorry, I could not recognize the fruit.");
-        result.innerHTML = `<p style="color:red">${data.error}</p>`;
-      } else {
-        speak(`It looks like ${data.prediction}`);
-        result.innerHTML = `<p style="color:blue">Prediction: ${data.prediction}</p><img src="${data.image_url}" />`;
+    if (btn) btn.innerText = "Listening...";
+
+    listenVoice(
+      async (spokenText) => {
+        if (btn) btn.innerText = "Predicting...";
+        const res = await fetch('/predict', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: spokenText })
+        });
+
+        const data = await res.json();
+        const result = document.getElementById('predictResult');
+
+        if (data.error) {
+          speak("Sorry, I could not recognize the fruit.");
+          result.innerHTML = `<p style="color:red">${data.error}</p>`;
+        } else {
+          speak(`It looks like ${data.prediction}`);
+          result.innerHTML = `<p style="color:blue">Prediction: ${data.prediction}</p><img src="${data.image_url}" />`;
+        }
+
+        if (btn) btn.innerText = "Start Voice Prediction";
+      },
+      8000,
+      () => {
+        // ✅ Called when user says nothing
+        if (btn) btn.innerText = "Start Voice Prediction";
       }
-    });
+    );
   });
 }
+
+
 
 // === Start Asking via Voice ===
 async function startAsking() {
@@ -101,7 +163,7 @@ async function handleAsk(question, fromChat = false) {
     }
   } else {
     if (fromChat) {
-      addChatMessage("Assistant", `❌ I don't know. <button onclick="searchNow(true)">Search</button> <button onclick="teachNow(true)">Teach</button>`);
+      addChatMessage("Assistant", `❌ I don't know. <button id="searchButton" onclick="searchNow(true)">Search</button> <button onclick="teachNow(true)">Teach</button>`);
     } else {
       document.getElementById('qaResult').innerHTML = `
         <p>❌ I don't know the answer.</p>
@@ -118,35 +180,45 @@ async function handleAsk(question, fromChat = false) {
 async function searchNow(fromChat = false) {
   if (!pendingQuestion) return;
 
+  const btn = document.getElementById("searchButton");
+  if (btn) btn.innerText = "Searching...";
+
   const expandPhrases = ["describe more", "more details", "explain more", "expand"];
   const isExpand = expandPhrases.includes(pendingQuestion.toLowerCase());
   const searchQuery = isExpand && lastQuestion ? lastQuestion : pendingQuestion;
 
-  const res = await fetch('/search', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question: searchQuery, last_question: lastQuestion })
-  });
-  const data = await res.json();
+  try {
+    const res = await fetch('/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: searchQuery, last_question: lastQuestion })
+    });
+    const data = await res.json();
 
-  if (data.answer) {
-    const responseText = `${data.answer} (${data.source})`;
-    if (fromChat) {
-      addChatMessage("Assistant", responseText);
+    if (data.answer) {
+      const responseText = `${data.answer} (${data.source})`;
+      if (fromChat) {
+        addChatMessage("Assistant", responseText);
+      } else {
+        document.getElementById('qaResult').innerHTML = `🔍 Found on Wiki: ${data.answer}`;
+        speak(data.answer);
+      }
     } else {
-      document.getElementById('qaResult').innerHTML = `🔍 Found on Wiki: ${data.answer}`;
-      speak(data.answer);
+      const msg = "❌ Still couldn't find the answer.";
+      if (fromChat) {
+        addChatMessage("Assistant", msg);
+      } else {
+        document.getElementById('qaResult').innerHTML = msg;
+        speak("Sorry, I still couldn't find the answer.");
+      }
     }
-  } else {
-    const msg = "❌ Still couldn't find the answer.";
-    if (fromChat) {
-      addChatMessage("Assistant", msg);
-    } else {
-      document.getElementById('qaResult').innerHTML = msg;
-      speak("Sorry, I still couldn't find the answer.");
-    }
+  } catch (e) {
+    console.error("Search error:", e);
+  } finally {
+    if (btn) btn.innerText = "Search"; // Always reset
   }
 }
+
 
 // === Unified Teach Now ===
 async function teachNow(fromChat = false) {
@@ -245,12 +317,13 @@ function cancelIfSpeaking() {
   return false;
 }
 
-function listenVoice(callback, duration = 8000) {
+function listenVoice(callback, duration = 8000, onEnd = null) {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
     alert("Speech recognition not supported.");
     return;
   }
+
   const recognition = new SpeechRecognition();
   recognition.lang = 'en-US';
   recognition.interimResults = false;
@@ -260,20 +333,27 @@ function listenVoice(callback, duration = 8000) {
   recognition.onresult = (event) => {
     const transcript = event.results[0][0].transcript.trim();
     responded = true;
-    callback(transcript);
+    callback(transcript); // 🗣️ Text returned to handler
   };
+
   recognition.onerror = () => {
     speak("Sorry, I didn't catch that.");
   };
+
   recognition.onend = () => {
-    if (!responded) updateAskButton("Ask a Question");
+    if (!responded && typeof onEnd === "function") onEnd(); // ✅ Reset button if nothing heard
   };
 
   recognition.start();
+
   setTimeout(() => {
-    if (!responded) recognition.stop();
+    if (!responded) {
+      recognition.stop();
+      if (typeof onEnd === "function") onEnd(); // ✅ Reset if timeout stops listening
+    }
   }, duration);
 }
+
 
 function updateAskButton(label) {
   const btn = document.querySelector("button[onclick='startAsking()']");

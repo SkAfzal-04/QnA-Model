@@ -106,6 +106,12 @@
     font-size: 0.95rem;
     color: green;
   }
+    #predictResult{
+      width: 100%
+    }
+  #predictResult,img{
+        max-width: -webkit-fill-available;
+  }
     @media (max-width: 769px) {
       .container {
         flex-direction: column;
@@ -140,7 +146,7 @@
 
     <div class="card">
       <h3>🎤 Predict Fruit (Voice Only)</h3>
-      <button onclick="startVoicePrediction()">Start Voice Prediction</button>
+      <button id="startPrediction" onclick="startVoicePrediction()">Start Voice Prediction</button>
       <div id="predictResult"></div>
     </div>
 

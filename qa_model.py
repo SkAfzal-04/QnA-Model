@@ -46,11 +46,17 @@ def train_qa_model(collection):
 
     for item in data:
         q = item["question"].strip().lower()
-        raw_answer = item["answer"].strip()
-        for part in [a.strip() for a in raw_answer.split("/") if a.strip()]:
-            questions.append(q)
-            answers.append(raw_answer)  # Save full answer for output
-            embeddings.append(embed(q))
+        ans_list = item["answer"]
+
+        if isinstance(ans_list, str):
+            ans_list = [ans_list]
+
+        for ans in ans_list:
+            a = ans.strip()
+            if a:
+                questions.append(q)
+                answers.append(a)
+                embeddings.append(embed(q))
 
     try:
         joblib.dump((embeddings, questions, answers), model_path)
@@ -60,8 +66,7 @@ def train_qa_model(collection):
         print("❌ Failed to save model:", e)
         return f"❌ Model save failed: {e}"
 
-  
-# === Load Model into Memory (initially or on fallback)
+# === Load Model into Memory
 def load_model():
     global embeddings, questions, answers
     try:

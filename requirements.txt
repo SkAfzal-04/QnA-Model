@@ -10,4 +10,5 @@ beautifulsoup4
 wikipedia
 sentence-transformers 
 torch
+transformers
 

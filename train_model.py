@@ -47,14 +47,11 @@ def train_classifier_model(collection):
 def predict_class(query, collection):
     try:
         model = joblib.load('model.pkl')
-        print("🟡 All items in database:")
-        for item in collection.find():
-            print(item)
         prediction = model.predict([query])[0]
 
         # Use regex to find case-insensitive match in MongoDB
         match = collection.find_one({"name": Regex(f"^{prediction}$", "i")})
-        print(f"Prediction: {prediction}, Match: {match}")
+        # print(f"Prediction: {prediction}, Match: {match}")
 
         if match and "image_url" in match:
             return prediction, match["image_url"]
